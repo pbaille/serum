@@ -161,7 +161,7 @@ you can provide mixins, just like in rum
 ### hiccup like vector litterals
 
 ```clojure
-  (mount [c1 {:args {:color :mediumaquamarine}}])
+(mount [c1 {:args {:color :mediumaquamarine}}])
 ```
 
 you can provide args to your component like this, it will be merged with the existant args
