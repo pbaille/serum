@@ -1,5 +1,5 @@
 (ns serum.tests
-  (:require [serum.core2 :refer [div swrap mount scomp rerender ref] :refer-macros [afn sfn]]
+  (:require [serum.core :refer [div swrap mount scomp rerender ref] :refer-macros [afn sfn]]
             [schema.core :as s]))
 
 (defn arrow [dir]

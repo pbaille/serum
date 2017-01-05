@@ -18,8 +18,6 @@ CAUTION! Alpha stage
   (mount (scomp {:body (fn [state] (println state) ["hello scomp!"])}))
   ```
 
-
-
   it can also hold a function that given the component state return a seq representing the body
   
 ### :args
@@ -35,7 +33,7 @@ CAUTION! Alpha stage
   
 ###:schema
 
-```
+```clojure
   (mount (scomp {:body (fn [{{a :a} :args}] [[:div a]])
                  :schema {:a s/Str}
                  :args {:a "hello!"}}))
@@ -43,7 +41,7 @@ CAUTION! Alpha stage
 ```
   you can add a schema to check args
 
-```
+```clojure
   (mount (scomp {:body (fn [{{a :a} :args}] [[:div a]])
                  :schema {:a s/Str}
                  :args {:a 1}}))
@@ -52,7 +50,7 @@ CAUTION! Alpha stage
 
   should throw an exception
   
-```
+```clojure
 
   (def a0 (atom 0))
 
@@ -67,51 +65,60 @@ CAUTION! Alpha stage
   if some args are refs that you want the component be reactive on you can tell it like this,the ref function is just a convenience that return a schema
   
   
-###:afn and :afns
+###:attrs
 
-
-```
+```clojure
   (mount (scomp {:body (fn [{{a :a} :args}] [[:div @a]])
-                 :afn  (fn [{{a :a} :args}] {:on-click (fn [_] (swap! a inc))})
+                 :attrs (sfn {{a :a} :args} {:on-click (fn [_] (swap! a inc))})
                  :schema {:a (ref s/Int)}
                  :args {:a a0}}))
 
-```
-
-  the afn option is used to provide an attribute-constructor,
-  that is just a function that takes state and return an attribute map
-
-```
-
-  (mount (scomp {:body   (fargs {a :a} [[:div @a]])
-                 :afn    (fargs {a :a} {:on-click (fn [_] (swap! a inc))})
+  (mount (scomp {:body (fn [{{a :a} :args}] [[:div @a]])
+                 :attrs (afn {a :a} {:on-click (fn [_] (swap! a inc))})
                  :schema {:a (ref s/Int)}
-                 :args   {:a a0}}))
+                 :args {:a a0}}))
+
+  (comment
+    "those expressions are equivalent"
+    (with-meta (fn [{{a :a} :args}] "body") {:type :sfn})
+    (sfn {{a :a} :args} "body")
+    (afn {a :a} "body"))
 ```
 
-  the 'fargs' macro provide a cleaner way to declare constructors that cares only about args
-  
-```
-  (mount (scomp {:body   (fargs {a :a} [[:div @a]])
-                 :afns    [(fargs {a :a} {:on-click (fn [_] (swap! a inc))})
-                           {:on-mouse-over (fn [e] (println e))}]
+the attrs option is used to provide one or many attribute-constructor(s) or attribute-map(s),
+an attribute constructor is a fn that olds {:type :sfn} in metadata and return an attribute-map,
+sfn stands for 'state function' in other words a value that depends on the component state
+it can be built with sfn or afn macros (note that first argument is a binding form, for sfn it binds on full state and for afn on args)  
+
+```clojure 
+
+  (mount (scomp {:body (afn {a :a} [[:div @a]])
+                 :attrs (afn {a :a} {:on-click (fn [_] (swap! a inc))})
                  :schema {:a (ref s/Int)}
-                 :args   {:a a0}}))
+                 :args {:a a0}}))                
+``` 
 
-```
+the `afn` macro provide a cleaner way to declare constructors that cares only about args
 
-  the afns options is used when you need to give several attributes-constructors or attributes-map at a time
+```clojure 
+  (mount (scomp {:body (afn {a :a} [[:div @a]])
+                 :attrs [(afn {a :a} {:on-click (fn [_] (swap! a inc))})
+                         {:on-mouse-over (fn [e] (println e))}]
+                 :schema {:a (ref s/Int)}
+                 :args {:a a0}}))
+``` 
+
+the :attrs option can take several attributes-constructors or attributes-map at a time
+
+###:style
   
-###:sfn and :sfns
-  
+```
+  (mount (scomp {:body (afn {t :text} [[:p t]])
+                 :style (afn {c :color} {:background-color c})
+                 :args {:color :lightskyblue :text "Hello!"}}))
 ```
 
-  (mount (scomp {:body   (fargs {t :text} [[:p t]])
-                 :sfn    (fargs {c :color} {:background-color c})
-                 :args   {:color :lightskyblue :text "Hello!"}}))
-```
-
-  sfn is like afn but for styles
+you can specify styles in the same way than attrs
 
 ```
   (def ss1 {:background-color :tomato
@@ -120,124 +127,105 @@ CAUTION! Alpha stage
             :border "3px solid lightcyan"})
 
   (def c1
-    (scomp {:body   (fargs {t :text} [[:p t]])
-            :sfns   [ss1 (fargs {c :color} {:background-color c})]
-            :args   {:color :lightskyblue :text "Hello!"}}))
+    (scomp {:body (afn {t :text} [[:p t]])
+            :style [ss1 (afn {c :color} {:background-color c})]
+            :args {:color :lightskyblue :text "Hello!"}}))
 
   (mount c1)
 
 ```
 
-  sfns can take a seq like afns
-  
-### <args , <afn , <sfn , <afns and <sfns
+like attrs it can take several at a time
 
+###:bpipe
 
-```
-  (mount (<args c1 {:color :mediumaquamarine}))
+bpipe option can hold a sequence of body transformations
+after the body has been evaluated, it is passed in all body transformations
 
-```
+```clojure
+  (mount (scomp {:body [c1 [c1 {:args {:text "goodbye!"}}]]
+                 :bpipe (fn [b] (apply concat (repeat 3 b)))}))
 
-  you can provide args to your component like this, it will be merged with the existant args
-
-```
-  (mount (<afn c1 {:on-click (fn [_] (println "yo"))}))
-  (mount (<sfn c1 {:color :white}))
+  (mount [c1 {:bpipe (fn [b] (repeat 3 (first b)))}])
 
 ```
 
-this will add given constructors or maps to your component, and both have their seq equivalent, repectivly <afns and <sfns
+###:mixins
 
-### <bfn and <bfns
-
-```
-  (mount (<bfn c1 (fn [b] (repeat 3 (first b)))))
-
-  (mount (scomp {:body [c1 (<args c1 {:text "goodbye!"})]
-                 :bfn  (fn [b] (apply concat (repeat 3 b)))}))
-
-```
-
-  bfn is used to transform the body of a component, it can be be given part of the scomp option map or via <bfn and <bfns functions
-  
-### :mixins  
-
-```
-  (def polite-comp
+```clojure
+(def polite-comp
     {:did-mount (fn [_] (println "Hello!"))})
 
   (mount (scomp {:mixins [polite-comp]
                  :body ["yop"]}))
+```
+
+you can provide mixins, just like in rum
+  
+### hiccup like vector litterals
+
+```
+  (mount [c1 {:args {:color :mediumaquamarine}}])
 
 ```
 
-  you can provide mixins like in rum
-  
+you can provide args to your component like this, it will be merged with the existant args
+
+```
+(mount [c1 {:attrs {:on-click (fn [_] (println "yo"))}}])
+
+```
+
+you can extend your component like this, c1 is kept intact, we are just adding a click handler here.
+   
 ### injections, selectors  
 
 ```
   (def c2 (scomp {:wrapper :.foo
-                   :body (fargs {c :content} c)}))
+                  :body (afn {c :content} c)}))
 
-  (def c3 (scomp {:body [(<args c2 {:content "foo"})
-                         (<args c2 {:content "bar"})]
-                  :sfn  {:background-color :purple
-                         :padding :10px
-                         ($ ".foo") {:background-color :lightcoral
-                                     :font-size :25px
-                                     :color :white
-                                     :padding :10px}}}))
+  (def c3 (scomp {:body [[c2 {:args {:content "foo"}}]
+                         [c2 {:args {:content "bar"}}]]
+                  :style {:background-color :purple
+                          :padding :10px
+                          ($ ".foo") {:background-color :lightcoral
+                                      :font-size :25px
+                                      :color :white
+                                      :padding :10px}}}))
 
   (mount c3)
 
 ```
 
-  you can inject styles or attributes into sub components 
+you can inject styles or attributes into sub components 
   
 ### pseudos classes and css macro
 
+
+```clojure
+  (mount [c3 {:style {:border-radius :5px
+                      :hover {:background-color :pink}}}])
 ```
 
-  (mount (<sfn c3 (fn [{css :css}]
-                    (let [{h? :hover} @css]
-                      {:border-radius :5px
-                       :background-color (if h? :pink :purple)}))))
-
-```
-
-  you could access :hover :focus and :active in the css atom, but it is a bit verbose
-
-```
-
-  (mount (<sfn c3 (css {:border-radius :5px
-                        :hover {:background-color :pink}})))
-
-```
-
-  much cleaner like this
+you can specify :hover :active and :focus styles like this
 
 
 ### attribute and styles merging
 
-```
-
+```clojure
   (def c4 (scomp {:body ["click me and watch console"]
-                  :afn  {:on-click (fn [_] (println "clicked"))}}))
+                  :attrs {:on-click (fn [_] (println "clicked"))}}))
 
-  (mount (<afn c4 {:on-click (fn [_] (println "clicked overiden"))}))
-  
-
+  (mount [c4 {:attrs {:on-click (fn [_] (println "clicked overiden"))}}])
 ```
 
-  when doing this the old click event is overiden by the new
+when doing this the old click event is overiden by the new
 
+```clojure
+  (mount [c4 {:attrs (m> {:on-click (fn [_] (println "clicked overiden"))})}])
 ```
 
-  (mount (<afn c4 (m> {:on-click (fn [_] (println "clicked overiden"))})))
-
-```
-
-  with m> it is added
+with m> it is added
 
 ```
 
@@ -245,7 +233,7 @@ this will add given constructors or maps to your component, and both have their 
 
   (def c5 (scomp {:body ["click me"]}))
 
-  (mount (<afn c5 default-on-click))
+  (mount [c5 {:attrs default-on-click}])
 
 ```
 
@@ -253,7 +241,7 @@ this will add given constructors or maps to your component, and both have their 
 
 ```
 
-  (mount (<afn c4 default-on-click))
+  (mount [c4 {:attrs default-on-click}])
 
 ```
 
@@ -264,12 +252,61 @@ this will add given constructors or maps to your component, and both have their 
   (def wrap-click
     (m! {:on-click
          (fn [click-handler]
-          (fn [_] (println "wrap") (click-handler) (println "wrap...")))}))
+           (fn [_] (println "wrap") (click-handler) (println "wrap...")))}))
 
-  (mount (<afn c4 wrap-click))
+  (mount [c4 {:attrs wrap-click}])
 
 ```
-  
+
   with m! you can swap an attribute value
+  
+## Usage
+
+```clojure
+  "usage test"
+  (def atom1 (atom 1))
+  (def atom2 (atom 10))
+  (def atom3 (atom {:a 12 :b 13}))
+
+  (def c1
+    (scomp {:label :c1
+            :wrapper :div#aze.ert
+            :attrs [{:on-click (fn [_] (println "yop"))}
+                    {:on-mouse-over (fn [_] (println "over"))}
+                    (m> (afn {b :b} {:on-click (fn [_] (swap! b inc))}))]
+            :style [{:background-color :mediumaquamarine
+                     :padding (str "10px")
+                     :border (str "10px solid grey")
+                     :hover {:background-color :mediumslateblue}
+                     :active {:background-color :pink}}
+                    (afn {a :a b :b}
+                         {:margin (str a "px")
+                          :padding (str @b "px")})]
+            :body (fn [_] ["Hello scomp!"])
+            :schema {:a s/Int :b (ref s/Int)}
+            :args {:a 50 :b (cursor atom3 [:b])}}))
+
+
+  (mount [c1 {:style (afn {a :a} {:border (str (/ a 4) "px solid lightskyblue")})
+              :attrs (m> {:on-click (fn [_] (println "yep"))})
+              :args {:a 12}
+              :bpipe (fn [b] (conj b [:div "one"]))}])
+
+  (def c2
+    (scomp {:wrapper :.qsd
+            :label :c2
+            :body [c1 c1]}))
+
+  (def c3
+    (scomp {:body [c2 c2]
+            :style {($ :.qsd) (m? {:border "10px solid lightgrey"})
+                    ($and ($ :.ert) ($ :$c1)) {:hover {:background-color :lightcoral}}
+                    ($or ($ :.zup) ($ :$c1)) {:color :white}
+                    ($p #(= :c1 (:label %))) {:font-size :30px}
+                    ($and ($ :$c2) ($nth 1 ($ :$c2))) {:background-color :lightcyan}
+                    ($or ($ :$c1) ($nth 1 ($ :$c2))) {:background-color :lightcyan}}}))
+
+  (mount c3)
+```
 
 
