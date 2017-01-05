@@ -19,6 +19,27 @@
   ([sym e] (vary-meta e assoc :type sym)))
 
 (defn t? [sym e] (= sym (t e)))
+(ns ^:figwheel-always serum.core
+  (:require-macros [serum.core :refer [selector afn sfn]])
+  (:require [rum.core :as rum]
+            [sablono.core :refer-macros [html]]
+            [schema.core :as s]))
+
+(enable-console-print!)
+
+; helpers -------------------------------------------------------------
+
+(defn wrap-fn [x]
+  (if (fn? x) x (constantly x)))
+
+(defn ensure-vec [x]
+  (cond (vector? x) x (sequential? x) (vec x) :else [x]))
+
+(defn t
+  ([e] (:type (meta e)))
+  ([sym e] (vary-meta e assoc :type sym)))
+
+(defn t? [sym e] (= sym (t e)))
 
 (defn merge-mode [x]
   (if (satisfies? IMeta x)
@@ -35,8 +56,8 @@
 (defn inject-state [state xs]
   (map
     #(if (t? :sfn %)
-      (->merge-mode % (% state))
-      %)
+       (->merge-mode % (% state))
+       %)
     xs))
 
 (defn assoc-kv [m [k v]]
@@ -49,8 +70,8 @@
   (let [oldv (k m)]
     (cond
       (not oldv) (assoc m k v)
-      (fn? v) (update-in m [k] juxt v)
-      (sequential? oldv) (update-in m [k] conj v)
+      (fn? v) (update m k juxt v)
+      (sequential? oldv) (update m k conj v)
       :else (assoc m k [oldv v]))))
 
 (defn merger [xs]
@@ -119,7 +140,7 @@
                (fn [c [k v]]
                  (cond
                    (= k :args) (update-in c [:args] merge v)
-                   (#{:style :attrs :bpipe} k) (update-in c [k] #(vec (concat % (ensure-vec v))))
+                   (#{:style :attrs :bpipe} k) (update c k #(vec (concat % (ensure-vec v))))
                    :else (assoc c k v)))
                c x)]
     (if-not (seq xs)
@@ -139,7 +160,7 @@
         fs (first s)]
     {:id      (second (re-find #"\#(\w+)" s))
      :classes (set (map second (re-seq #"\.(\w+)" s)))
-     :el      (when-not (or (= fs "$") (= fs ".") (= fs "#")) (re-find #"\w+" s))
+     :el      (when-not (#{"." "$" "#"} fs) (re-find #"\w+" s))
      :label   (second (re-find #"\$(\w+)" s))}))
 
 (defn c-matchers [c]
@@ -327,14 +348,413 @@
    (fn [{:keys [wrapper attrs style bpipe body] :as state}]
      (let [{:keys [sis style pseudo-styles]} (->> style (inject-state state) kv-seq split-styles)
            state (assoc state :pseudo-styles pseudo-styles :pseudo-classes (atom #{:none}))
-           [attrs ais] (->> (conj attrs css-handlers) (inject-state state) kv-seq merger)
+           [attrs ais] (->> (conj attrs css-handlers) (inject-state state) kv-seq merger) ;;css handlers merge mode ??? it will be overiden ???
            bpipe (concat (inject-state state bpipe) (style-injections sis) (attr-injections ais))
            btrans #(reduce (fn [b t] (t b)) % bpipe)]
        #_(println "render" (:args state))
        [(html (apply vector
                      wrapper
                      (assoc attrs :style style)
-                     (-> ((wrap-fn (or body [])) state) parse-litterals btrans build-body)))
+                     (-> ((wrap-fn (or body [])) state)
+                         parse-litterals
+                         btrans
+                         build-body)))
+        state]))})
+
+(defn scomp-class [mixins label]
+  (rum/build-class (conj mixins scomp-render) label))
+
+
+;;  -----------------------------------------------------------------------------
+
+(defn ref
+  "ref schema
+   ex: (ref schema.core/Int)
+   describe a ref that olds an Integer"
+  [schema]
+  (t :ref
+     (s/conditional
+       (constantly true) (s/pred #(satisfies? IDeref %))
+       (constantly true) (s/pred #(s/validate schema @%)))))
+
+(defn strict
+  "make an args schema non extensible, no extra keys allowed"
+  [schema]
+  (vary-meta schema assoc {:strict true}))
+
+(defn normalize-scomp
+  [{:keys [mixins wrapper attrs style bpipe body schema label args] :as spec}]
+  (assoc spec
+    :mixins (or mixins [])
+    :wrapper (or wrapper :div)
+    :attrs (ensure-vec (or attrs []))
+    :style (ensure-vec (or style []))
+    :bpipe (ensure-vec (or bpipe []))
+    :body (wrap-fn (or body (constantly [])))
+    :args (or args {})
+    :label (or (and label (name label)) (str (gensym "scomp")))
+    :schema (let [sc (or schema {})]
+              (if (:strict (meta schema)) sc (assoc sc s/Any s/Any)))))
+
+;maybe turn this into a record
+(defn scomp
+  "serum component"
+  [spec]
+  (let [spec (normalize-scomp spec)
+        has-refs? (some #(t? :ref %) (vals (:schema spec)))
+        mixins (if has-refs? (conj (:mixins spec) watched) (:mixins spec))
+        k (scomp-class mixins (:label spec))]
+    (vary-meta
+      spec
+      assoc
+      :type :scomp
+      :builder
+      (fn build [{s :schema args :args :as spec}]
+        (s/validate s args)
+        (rum/element k spec nil)))))
+
+(def div (scomp {}))
+
+(defn swrap [x]
+  (scomp {:wrapper x}))
+
+(defn scomp? [x] (t? :scomp x))
+
+(defn wrap-render
+  "little shortcut for rerender after an event-handler"
+  [f]
+  (t :sfn
+     (fn [{c :rum/react-component}]
+       (fn [e] (f e) (rum/request-render c)))))
+
+(defn mount
+  ([c] (mount c js/document.body))
+  ([c target] (rum/mount (build (parse-litteral c)) target)))
+
+(def cursor rum/cursor)
+
+(def rerender rum/request-render)
+
+(defn render [state]
+  (rum/request-render (:rum/react-component state)))
+(defn merge-mode [x]
+  (if (satisfies? IMeta x)
+    (or (:merge-mode (meta x)) :set)
+    :set))
+
+(defn ->merge-mode
+  ([x] #(->merge-mode x %))
+  ([x y]
+   (if-let [mm (or (and (keyword? x) x) (merge-mode x))]
+     (vary-meta y assoc :merge-mode mm)
+     x)))
+
+(defn inject-state [state xs]
+  (map
+    #(if (t? :sfn %)
+      (->merge-mode % (% state))
+      %)
+    xs))
+
+(defn assoc-kv [m [k v]]
+  (assoc m k v))
+
+(defn swap-if [m [k f]]
+  (if-let [olv (k m)] (assoc m k (f olv)) m))
+
+(defn join-kv [m [k v]]
+  (let [oldv (k m)]
+    (cond
+      (not oldv) (assoc m k v)
+      (fn? v) (update m k juxt v)
+      (sequential? oldv) (update m k conj v)
+      :else (assoc m k [oldv v]))))
+
+(defn merger [xs]
+  (loop [defaults {} attrs {} injections {} [x & nxt :as xs] xs]
+    (cond
+      (not (seq xs))                                        ;done case
+      [(merge defaults attrs) injections]
+      (t? :selector (first x))                              ;injection
+      (recur defaults attrs (conj injections x) nxt)
+      :else
+      (condp = (merge-mode x)
+        :set (recur defaults (assoc-kv attrs x) injections nxt)
+        :default (recur (assoc-kv defaults x) attrs injections nxt)
+        :swap (recur defaults (swap-if attrs x) injections nxt)
+        :join (recur defaults (join-kv attrs x) injections nxt)))))
+
+(defn kv-seq [xs]
+  (reduce
+    (fn [acc el]
+      (if (or (sequential? el) (map? el))
+        (apply conj acc (map (partial ->merge-mode el) el))
+        (conj acc el)))
+    [] xs))
+
+(defn build [x]
+  (if-let [builder (:builder (meta x))]
+    (builder x)
+    x))
+
+(defn build-body [body] (map build body))
+
+(defn camel-case [k]
+  (if k
+    (let [[first-word & words] (clojure.string/split (name k) #"-")]
+      (if (empty? words)
+        (name k)
+        (-> (map clojure.string/capitalize words)
+            (conj first-word)
+            clojure.string/join)))))
+
+(defn format-style [m]
+  (into {} (map (fn [[k v]] [(camel-case k) (when v (name v))]) m)))
+
+(defn split-styles
+  "split pseudo styles, styles and style injections"
+  [kvs]
+  (let [x (reduce
+            (fn [acc [k v]]
+              (if (#{:hover :active :focus} k)
+                (update-in acc [:pseudo-styles k] conj v)
+                (update-in acc [:styles] conj [k v])))
+            {:styles [] :pseudo-styles {:hover [] :active [] :focus []}}
+            kvs)
+        [styles sis] (merger (:styles x))
+        pss (into {} (map (fn [[k v]] [k (first (merger (kv-seq v)))]) (:pseudo-styles x)))
+        ks (set (mapcat (fn [[k v]] (keys v)) pss))
+        none-styles (merge (apply hash-map (interleave ks (repeat nil))) (select-keys styles ks))]
+    {:style         styles
+     :sis           sis
+     :pseudo-styles (assoc pss :none none-styles)}))
+
+; component extension -----------------------------------
+
+(defn << [c x & xs]
+  (let [cnxt (reduce
+               (fn [c [k v]]
+                 (cond
+                   (= k :args) (update-in c [:args] merge v)
+                   (#{:style :attrs :bpipe} k) (update c k #(vec (concat % (ensure-vec v))))
+                   :else (assoc c k v)))
+               c x)]
+    (if-not (seq xs)
+      cnxt
+      (apply << cnxt xs))))
+
+;merge utils ----------------------------------------------
+
+(def m? (->merge-mode :default))
+(def m! (->merge-mode :swap))
+(def m> (->merge-mode :join))
+
+;selectors ------------------------------------------------
+
+(defn $parse [x]
+  (let [s (name x)
+        fs (first s)]
+    {:id      (second (re-find #"\#(\w+)" s))
+     :classes (set (map second (re-seq #"\.(\w+)" s)))
+     :el      (when-not (#{"." "$" "#"} fs) (re-find #"\w+" s))
+     :label   (second (re-find #"\$(\w+)" s))}))
+
+(defn c-matchers [c]
+  (let [s (name (:wrapper c))
+        div? (or (= (first s) ".") (= (first s) "#"))]
+    {:id      (second (re-find #"\#(\w+)" s))
+     :classes (set (map second (re-seq #"\.(\w+)" s)))
+     :el      (if div? "div" (re-find #"\w+" s))
+     :label   (when-let [l (:label c)] (name l))}))
+
+(defn- map$ [m]
+  (fn [body f]
+    (second
+      (reduce
+        (fn [[m res] el]
+          (if (t? :scomp el)
+            (let [[el m] (m el m f)]
+              [m (conj res el)])
+            [m (conj res el)]))
+        [m []]
+        body))))
+
+(defn inject [body injections]
+  (if-let [[sel trans] (first injections)]
+    (inject ((map$ sel) body trans)
+            (next injections))
+    body))
+
+(defn <<$ [c i]
+  (<< c {:bpipe #(inject % [i])}))
+
+(defn $p [pred]
+  (selector [c s f]
+            (let [match? (pred c)]
+              [(<<$ (if match? (f c) c) [s f]) s match?])))
+
+(defn $e [x]
+  (selector [c s f]
+            (let [match? (= (:el (c-matchers c)) (name x))]
+              [(<<$ (if match? (f c) c) [s f]) s match?])))
+
+(defn $k [x]
+  (selector [c s f]
+            (let [match? ((:classes (c-matchers c)) (name x))]
+              [(<<$ (if match? (f c) c) [s f]) s])))
+
+(defn $id [x]
+  (selector [c s f]
+            (let [match? (= (:id (c-matchers c)) (name x))]
+              [(<<$ (if match? (f c) c) [s f]) s match?])))
+
+(defn $ [x]
+  (selector [c s f]
+            (let [{xcs :classes xid :id xel :el xlab :label} ($parse x)
+                  {:keys [classes label id el]} (c-matchers c)
+                  match? (and (clojure.set/subset? xcs classes)
+                              (cond (and xid id) (= xid id) xid false :else true)
+                              (cond (and xlab label) (= xlab label) xlab false :else true)
+                              (if xel (= xel el) true))]
+              [(<<$ (if match? (f c) c) [s f]) s match?])))
+
+(def $childs
+  (selector [c s f]
+            [(f c) s true]))
+
+(defn $and [& xs]
+  (selector [c s f]
+            (let [[match? sels]
+                  (loop [ret true [x & nxt] xs sels []]
+                    (if-not x [ret sels]
+                              (let [[_ s match?] (x c s f)]
+                                (recur (and match? ret) nxt (conj sels s)))))]
+              [(<<$ (if match? (f c) c) [s f]) (apply $and sels) match?])))
+
+(defn $or [& xs]
+  (selector [c s f]
+            (let [[match? sels]
+                  (loop [ret false [x & nxt] xs sels []]
+                    (if-not x [ret sels]
+                              (let [[_ s match?] (x c s f)]
+                                (recur (or match? ret) nxt (conj sels s)))))]
+              [(<<$ (if match? (f c) c) [s f]) (apply $or sels) match?])))
+
+(defn $not [c s _] [c s false])
+
+(defn $nth [n x]
+  (selector [c s f]
+            (let [match? (last (x c s f))]
+              (if match?
+                (if (zero? n)
+                  [(f c) $not true]
+                  [c ($nth (dec n) x) false])
+                [c s false]))))
+
+;; rendering helpers -----------------------------------------------------
+
+(defn style-injections [sis]
+  (map (fn [[s t]]
+         (fn [body]
+           (inject body [[s #(<< % {:style t})]])))
+       sis))
+
+(defn attr-injections [ais]
+  (map (fn [[s t]]
+         (fn [body]
+           (inject body [[s #(<< % {:attrs t})]])))
+       ais))
+
+(defn- deref-args [xs]
+  ;; deref is not deep
+  (mapv #(if (satisfies? IDeref %) @% %) xs))
+
+; slighly modified version of (merge rum/cursored rum/cursored-watch)
+(def watched
+  {:transfer-state
+   (fn [old new]
+     (assoc new :om-args (:om-args old)))
+   :should-update
+   (fn [old-state new-state]
+     (not= (:om-args old-state) (deref-args (:args new-state))))
+   :wrap-render
+   (fn [render-fn]
+     (fn [state]
+       (let [[dom next-state] (render-fn state)]
+         [dom (assoc next-state :om-args (deref-args (:args state)))])))
+   :did-mount
+   (fn [state]
+     (doseq [arg (vals (:args state))
+             :when (satisfies? IWatchable arg)]
+       (add-watch arg (str ":watched-" (:rum/id state))
+                  (fn [_ _ _ _] (rum/request-render (:rum/react-component state)))))
+     state)
+   :will-unmount
+   (fn [state]
+     (doseq [arg (vals (:args state))
+             :when (satisfies? IWatchable arg)]
+       (remove-watch arg (rum/cursored-key state)))
+     state)})
+
+(defn compute-styles [pks pss]
+  (let [pks @pks]
+    (merge {}
+           (if (pks :none) (:none pss))
+           (if (pks :hover) (:hover pss))
+           (if (pks :focus) (:focus pss))
+           (if (pks :active) (:active pss)))))
+
+(def css-handlers
+  (m>
+    (sfn {c   :rum/react-component
+          pks :pseudo-classes
+          pss :pseudo-styles}
+         (letfn [(do-styles [] (let [node (.getDOMNode c)]
+                                 (doseq [[k v] (format-style (compute-styles pks pss))]
+                                   (aset (.-style node) k v))))
+                 (addpk [x] (fn [_] (swap! pks conj x) (do-styles)))
+                 (rempk [x] (fn [_] (reset! pks (clojure.set/difference @pks #{x})) (do-styles)))]
+
+           {:on-mouse-enter (addpk :hover)
+            :on-mouse-leave (rempk :hover)
+            :on-focus       (addpk :focus)
+            :on-blur        (rempk :focus)
+            :on-mouse-down  (addpk :active)
+            :on-mouse-up    (rempk :active)}))))
+
+(defn parse-litteral
+  "turn [my-scomp spec-maps body-element...] into proper scomp"
+  [x]
+  (if (and (vector? x) (t? :scomp (first x)))             ;is scomp vec litteral
+    (let [[c & xs] x
+          [spec body]
+          (if (map? (first xs))
+            [(first xs) (rest xs)]
+            [{} xs])]
+      (if (seq body)                                      ;litteral body
+        (<< c (assoc spec :body body))
+        (<< c spec)))
+    x))
+
+(defn- parse-litterals [body]
+  (mapv parse-litteral body))
+
+(def scomp-render
+  {:render
+   (fn [{:keys [wrapper attrs style bpipe body] :as state}]
+     (let [{:keys [sis style pseudo-styles]} (->> style (inject-state state) kv-seq split-styles)
+           state (assoc state :pseudo-styles pseudo-styles :pseudo-classes (atom #{:none}))
+           [attrs ais] (->> (conj attrs css-handlers) (inject-state state) kv-seq merger) ;;css handlers merge mode ??? it will be overiden ???
+           bpipe (concat (inject-state state bpipe) (style-injections sis) (attr-injections ais))
+           btrans #(reduce (fn [b t] (t b)) % bpipe)]
+       #_(println "render" (:args state))
+       [(html (apply vector
+                     wrapper
+                     (assoc attrs :style style)
+                     (-> ((wrap-fn (or body [])) state)
+                         parse-litterals
+                         btrans
+                         build-body)))
         state]))})
 
 (defn scomp-class [mixins label]
@@ -442,13 +862,15 @@
   "parse scomp vecs test"
   (let [c (scomp {:body ["hello"]})]
     (mount
-      (scomp {:body [[c {:style {:background-color :blue}}]
+      (scomp {:body [[c {:style {:background-color :dodgerblue}}]
                      "yop"]})))
 
   (mount
     [div {:style {:background-color :limegreen}}
      [:div "yo"]
-     [div {:style {:background-color :green}} "bob" [div "blop"]]])
+     [div {:style {:background-color :green}}
+      "bob"
+      [div "blop"]]])
 
   (mount
     [(swrap :div)
@@ -536,7 +958,7 @@
                  :schema {:a (ref s/Int)}
                  :args   {:a a0}}))
 
-  "the 'fargs' macro provide a cleaner way to declare constructors that cares only about args"
+  "the 'afn' macro provide a cleaner way to declare constructors that cares only about args"
 
   (mount (scomp {:body   (afn {a :a} [[:div @a]])
                  :attrs  [(afn {a :a} {:on-click (fn [_] (swap! a inc))})

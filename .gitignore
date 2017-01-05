@@ -13,3 +13,5 @@ pom.xml
 .nrepl-port
 .idea
 serum.iml
+resources/public/js
+.DS_Store
