@@ -4,6 +4,14 @@
 
 CAUTION! Alpha stage
 
+## Usage 
+
+add the following to your dependencies: `[serum "0.1.0-SNAPSHOT"]`
+
+```clojure
+(ns my-ns (:require [serum.core :as s])
+```
+
 ## examples
 
   scomp function is used to define new components, it takes a map
