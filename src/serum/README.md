@@ -1,5 +1,7 @@
 # Serum: compose, extend and style rum components
 
+![alt tag](https://github.com/pbaille/serum/blob/master/resources/public/syringe.png)
+
 CAUTION! Alpha stage
 
 ## examples
