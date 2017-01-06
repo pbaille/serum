@@ -254,12 +254,12 @@ when wrap with m? an attribute or style is merged only if not present in the tar
 should not change c4 click
 
 ```clojure
-  (def wrap-click
-    (m! {:on-click
-         (fn [click-handler]
-           (fn [_] (println "wrap") (click-handler) (println "wrap...")))}))
+(def wrap-click
+  (m! {:on-click
+       (fn [click-handler]
+         (fn [_] (println "wrap") (click-handler) (println "wrap...")))}))
 
-  (mount [c4 {:attrs wrap-click}])
+(mount [c4 {:attrs wrap-click}])
 ```
 
 with m! you can swap an attribute value
