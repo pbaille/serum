@@ -170,17 +170,25 @@ you can provide mixins, just like in rum
   
 ### hiccup like vector litterals
 
+Once your component is attached to a var, you can use it like this:  
+
+```clojure
+(mount [c1])
+```
+
+You can pass it an extension map, that will be merged into existing configuration.
+
 ```clojure
 (mount [c1 {:args {:color :mediumaquamarine}}])
 ```
 
-you can provide args to your component like this, it will be merged with the existant args
+you can provide `:args`, `:attrs`, `:style`, `:bpipe`, `:body`, `:schema` as in your `scomp` call
 
 ```clojure
 (mount [c1 {:attrs {:on-click (fn [_] (println "yo"))}}])
 ```
 
-you can extend your component like this, c1 is kept intact, we are just adding a click handler here.
+we are just adding a click handler here.
    
 ### injections, selectors  
 
@@ -202,7 +210,7 @@ you can extend your component like this, c1 is kept intact, we are just adding a
 
 you can inject styles or attributes into sub components 
   
-### pseudos classes and css macro
+### css pseudos classes
 
 ```clojure
   (mount [c3 {:style {:border-radius :5px
