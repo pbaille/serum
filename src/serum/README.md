@@ -251,7 +251,7 @@ when wrap with m? an attribute or style is merged only if not present in the tar
 
 ```
 
-  should not change c4 click
+should not change c4 click
 
 ```clojure
   (def wrap-click
