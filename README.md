@@ -124,7 +124,7 @@ the :attrs option can take several attributes-constructors or attributes-map at 
                :args {:color :lightskyblue :text "Hello!"}}))
 ```
 
-you can specify styles in the same way than attrs
+you can specify styles in the same way than attrs.
 
 ```clojure
 (def ss1 {:background-color :tomato
@@ -141,11 +141,11 @@ you can specify styles in the same way than attrs
 
 ```
 
-like attrs it can take several at a time
+like attrs it can take several at a time (constructors or maps).
 
 ###:bpipe
 
-bpipe option can hold a sequence of body transformations
+bpipe option can hold one or severals body transformations (body -> body)
 after the body has been evaluated, it is passed in all body transformations
 
 ```clojure
@@ -198,6 +198,7 @@ we are just adding a click handler here.
 
 (def c3 (scomp {:body [[c2 {:args {:content "foo"}}]
                        [c2 {:args {:content "bar"}}]]
+                :attrs {($ ".foo") {:on-click (fn [_] (println "injected handler"))}}
                 :style {:background-color :purple
                         :padding :10px
                         ($ ".foo") {:background-color :lightcoral

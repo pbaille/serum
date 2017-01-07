@@ -20,6 +20,9 @@
 
 (defn t? [sym e] (= sym (t e)))
 
+(defn name* [x]
+  (if x (name x) ""))
+
 (defn merge-mode [x]
   (if (satisfies? IMeta x)
     (or (:merge-mode (meta x)) :set)
@@ -373,7 +376,7 @@
     :attrs (ensure-vec (or attrs []))
     :style (ensure-vec (or style []))
     :bpipe (ensure-vec (or bpipe []))
-    :body (wrap-fn (or body (constantly [])))
+    :body (wrap-fn (or body []))
     :args (or args {})
     :label (or (and label (name label)) (str (gensym "scomp")))
     :schema (let [sc (or schema {})]
@@ -609,6 +612,7 @@
 
   (def c3 (scomp {:body [[c2 {:args {:content "foo"}}]
                          [c2 {:args {:content "bar"}}]]
+                  :attrs {($ ".foo") {:on-click (fn [_] (println "injected handler"))}}
                   :style {:background-color :purple
                           :padding :10px
                           ($ ".foo") {:background-color :lightcoral
