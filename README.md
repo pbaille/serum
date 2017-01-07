@@ -209,8 +209,58 @@ we are just adding a click handler here.
 (mount c3)
 ```
 
-you can inject styles or attributes into sub components 
-  
+you can inject styles or attributes into sub components via selectors.
+
+there's a bunch of built in selectors, for matching subcomponents.
+
+```clojure
+$e ;;tag selector
+
+$k ;;class selector
+
+$id ;;id selector
+
+$ ;;wild selector
+($ "#yo") ($ ".foo") ($ "div")
+
+$childs ;;matches all subcomponents
+
+$p ;predicate selector
+($p pred) 
+;; matches all element that return truthy when passed to pred
+
+$and
+($or ($id "yo") ($k ".foo")) 
+;; matches element that have both id "yo" or class "foo"
+
+$or ;or selector
+($or ($id "yo") ($k ".foo")) 
+;; matches element that have either id "yo" or class "foo"
+
+$not 
+($not ($k ".foo")) 
+;; matches all subcomponents without class "foo"
+
+$nth 
+($nth 1 ($k ".foo")) 
+;; matches the second subcomponent of class "foo"
+```  
+
+You can easily implement your own, see $or implementation: 
+
+```clojure
+(defn $or [& xs]
+  (selector [c s f]
+            (let [[match? sels]
+                  (loop [ret false [x & nxt] xs sels []]
+                    (if-not x [ret sels]
+                              (let [[_ s match?] (x c s f)]
+                                (recur (or match? ret) nxt (conj sels s)))))]
+              [(<<$ (if match? (f c) c) [s f]) (apply $or sels) match?])))
+```
+
+TODO, explain this
+
 ### css pseudos classes
 
 ```clojure
