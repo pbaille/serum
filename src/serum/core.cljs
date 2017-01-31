@@ -85,17 +85,8 @@
 
 (defn build-body [body] (map build body))
 
-(defn camel-case [k]
-  (if k
-    (let [[first-word & words] (clojure.string/split (name k) #"-")]
-      (if (empty? words)
-        (name k)
-        (-> (map clojure.string/capitalize words)
-            (conj first-word)
-            clojure.string/join)))))
-
 (defn format-style [m]
-  (into {} (map (fn [[k v]] [(camel-case k) (when v (name v))]) m)))
+  (into {} (map (fn [[k v]] [k (when v (name v))]) m)))
 
 (defn split-styles
   "split pseudo styles, styles and style injections"
@@ -251,37 +242,6 @@
            (inject body [[s #(<< % {:attrs t})]])))
        ais))
 
-(defn- deref-args [xs]
-  ;; deref is not deep
-  (mapv #(if (satisfies? IDeref %) @% %) xs))
-
-; slighly modified version of (merge rum/cursored rum/cursored-watch)
-(def watched
-  {:transfer-state
-   (fn [old new]
-     (assoc new :om-args (:om-args old)))
-   :should-update
-   (fn [old-state new-state]
-     (not= (:om-args old-state) (deref-args (:args new-state))))
-   :wrap-render
-   (fn [render-fn]
-     (fn [state]
-       (let [[dom next-state] (render-fn state)]
-         [dom (assoc next-state :om-args (deref-args (:args state)))])))
-   :did-mount
-   (fn [state]
-     (doseq [arg (vals (:args state))
-             :when (satisfies? IWatchable arg)]
-       (add-watch arg (str ":watched-" (:rum/id state))
-                  (fn [_ _ _ _] (rum/request-render (:rum/react-component state)))))
-     state)
-   :will-unmount
-   (fn [state]
-     (doseq [arg (vals (:args state))
-             :when (satisfies? IWatchable arg)]
-       (remove-watch arg (rum/cursored-key state)))
-     state)})
-
 (defn compute-styles [pks pss]
   (let [pks @pks]
     (merge {}
@@ -333,22 +293,20 @@
 (defn- parse-litterals [body]
   (mapv parse-litteral body))
 
-(def scomp-render
-  {:render
-   (fn [{:keys [wrapper attrs style bpipe body] :as state}]
-     (let [{:keys [sis style pseudo-styles]} (->> style (inject-state state) kv-seq split-styles)
-           state (assoc state :pseudo-styles pseudo-styles :pseudo-classes (atom #{:none}))
-           [attrs ais] (->> (conj attrs css-handlers) (inject-state state) kv-seq merger) ;; css-handlers merge mode ????
-           bpipe (concat (inject-state state bpipe) (style-injections sis) (attr-injections ais))
-           btrans #(reduce (fn [b t] (t b)) % bpipe)]
-       [(html (apply vector
-                     wrapper
-                     (assoc attrs :style style)
-                     (-> ((wrap-fn (or body [])) state) parse-litterals btrans build-body)))
-        state]))})
+(defn scomp-render [{:keys [wrapper attrs style bpipe body] :as state}]
+  (let [{:keys [sis style pseudo-styles]} (->> style (inject-state state) kv-seq split-styles)
+        state (assoc state :pseudo-styles pseudo-styles :pseudo-classes (atom #{:none}))
+        [attrs ais] (->> (conj attrs css-handlers) (inject-state state) kv-seq merger) ;; css-handlers merge mode ????
+        bpipe (concat (inject-state state bpipe) (style-injections sis) (attr-injections ais))
+        btrans #(reduce (fn [b t] (t b)) % bpipe)]
+    [(html (apply vector
+                  wrapper
+                  (assoc attrs :style style)
+                  (-> ((wrap-fn (or body [])) state) parse-litterals btrans build-body)))
+     state]))
 
 (defn scomp-class [mixins label]
-  (rum/build-class (conj mixins scomp-render) label))
+  (rum/build-class scomp-render mixins label))
 
 
 ;;  -----------------------------------------------------------------------------
@@ -388,7 +346,7 @@
   [spec]
   (let [spec (normalize-scomp spec)
         has-refs? (some #(t? :ref %) (vals (:schema spec)))
-        mixins (if has-refs? (conj (:mixins spec) watched) (:mixins spec))
+        mixins (if has-refs? (conj (:mixins spec) rum/reactive) (:mixins spec))
         k (scomp-class mixins (:label spec))]
     (vary-meta
       spec
@@ -397,7 +355,7 @@
       :builder
       (fn build [{s :schema args :args :as spec}]
         (s/validate s args)
-        (rum/element k spec nil)))))
+        (js/React.createElement k (clj->js {"rum/initial-state" spec}))))))
 
 (def div (scomp {}))
 
@@ -443,12 +401,11 @@
 
 (comment
 
-  (comment
-    (mount [:div {:style {:background-color :limegreen
-                          :hover {:background-color :lime}}
-                  :on-click (fn [_] (println "hi!"))}
-            "hello" "you"
-            (map (fn [x] [:span x]) ["aze" "ert"])]))
+  (mount [:div {:style {:background-color :limegreen
+                        :hover {:background-color :lime}}
+                :on-click (fn [_] (println "hi!"))}
+          "hello" "you"
+          (map (fn [x] [:span x]) ["aze" "ert"])])
 
   "pseudo classes test"
   (mount
@@ -491,7 +448,11 @@
 
 (comment
 
-  (mount (scomp {:body ["hello scomp!"]}))
+  (def app (.querySelector js/document "#app"))
+
+  (build (parse-litteral (scomp {:body ["hello scomp!"]})))
+
+  (mount (scomp {:body ["hello scomp!"]}) app)
 
   "the body key should contains a seq representing the body of the component"
 

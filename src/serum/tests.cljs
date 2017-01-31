@@ -52,7 +52,7 @@
                  :border     (when (= i @sel) "3px solid tomato")
                  :hover      {:border "3px solid lightblue"}}}])]])}))
 
-(mount [slideshow
+#_(mount [slideshow
         {:args
          {:sel  (atom 0)
           :urls ["http://portra.wpshower.com/wp-content/uploads/2014/03/000112.jpg"
