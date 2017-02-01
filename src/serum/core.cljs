@@ -355,7 +355,7 @@
       :builder
       (fn build [{s :schema args :args :as spec}]
         (s/validate s args)
-        (js/React.createElement k (clj->js {"rum/initial-state" spec}))))))
+        (js/React.createElement k #js {":rum/initial-state" spec})))))
 
 (def div (scomp {}))
 
@@ -448,9 +448,7 @@
 
 (comment
 
-  (def app (.querySelector js/document "#app"))
-
-  (build (parse-litteral (scomp {:body ["hello scomp!"]})))
+  (defn mount [x] (rum/mount (build (parse-litteral x)) (.querySelector js/document "#app")))
 
   (mount (scomp {:body ["hello scomp!"]}) app)
 
