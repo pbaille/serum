@@ -478,21 +478,21 @@
 
   (def a0 (atom 0))
 
-  (mount (scomp {:body (fn [{{a :a} :args}] [[:div @a]])
+  (mount (scomp {:body (fn [{{a :a} :args}] [[:div (rum/react a)]])
                  :schema {:a (ref s/Int)}
                  :args {:a a0}}))
 
   (swap! a0 inc)
 
   "if some args are refs that you want the component be reactive on you can tell it like this,
-  the ref function is just a convenience that return a schema"
+  the ref function is just a convenience that return a schema, notice that you also have to use rum/react in your render fn"
 
-  (mount (scomp {:body (fn [{{a :a} :args}] [[:div @a]])
+  (mount (scomp {:body (fn [{{a :a} :args}] [[:div (rum/react a)]])
                  :attrs (sfn {{a :a} :args} {:on-click (fn [_] (swap! a inc))})
                  :schema {:a (ref s/Int)}
                  :args {:a a0}}))
 
-  (mount (scomp {:body (fn [{{a :a} :args}] [[:div @a]])
+  (mount (scomp {:body (fn [{{a :a} :args}] [[:div (rum/react a)]])
                  :attrs (afn {a :a} {:on-click (fn [_] (swap! a inc))})
                  :schema {:a (ref s/Int)}
                  :args {:a a0}}))
@@ -508,14 +508,14 @@
   sfn stands for 'state function' in other words a value that depends on the component state
   it can be built with sfn or afn macros (note that first argument is a binding form, for sfn it binds on full state and for afn on args)"
 
-  (mount (scomp {:body (afn {a :a} [[:div @a]])
+  (mount (scomp {:body (afn {a :a} [[:div (rum/react a)]])
                  :attrs (afn {a :a} {:on-click (fn [_] (swap! a inc))})
                  :schema {:a (ref s/Int)}
                  :args {:a a0}}))
 
   "the 'afn' macro provide a cleaner way to declare constructors that cares only about args"
 
-  (mount (scomp {:body (afn {a :a} [[:div @a]])
+  (mount (scomp {:body (afn {a :a} [[:div (rum/react a)]])
                  :attrs [(afn {a :a} {:on-click (fn [_] (swap! a inc))})
                          {:on-mouse-over (fn [e] (println e))}]
                  :schema {:a (ref s/Int)}
@@ -643,7 +643,7 @@
                     (afn {a :a b :b}
                          {:margin (str a "px")
                           :padding (str @b "px")})]
-            :body (fn [_] ["Hello scomp!"])
+            :body (fn [_] (rum/react b) ["Hello scomp!"])
             :schema {:a s/Int :b (ref s/Int)}
             :args {:a 50 :b (cursor atom3 [:b])}}))
 

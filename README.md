@@ -61,7 +61,7 @@ should throw an exception
 ```clojure
 (def a0 (atom 0))
 
-(mount (scomp {:body (fn [{{a :a} :args}] [[:div @a]])
+(mount (scomp {:body (fn [{{a :a} :args}] [[:div (rum/react a)]])
                :schema {:a (ref s/Int)}
                :args {:a a0}}))
 
@@ -75,12 +75,12 @@ if some args are refs that you want the component be reactive on you can tell it
 ###:attrs
 
 ```clojure
-(mount (scomp {:body (fn [{{a :a} :args}] [[:div @a]])
+(mount (scomp {:body (fn [{{a :a} :args}] [[:div (rum/react a)]])
                :attrs (sfn {{a :a} :args} {:on-click (fn [_] (swap! a inc))})
                :schema {:a (ref s/Int)}
                :args {:a a0}}))
 
-(mount (scomp {:body (fn [{{a :a} :args}] [[:div @a]])
+(mount (scomp {:body (fn [{{a :a} :args}] [[:div (rum/react a)]])
                :attrs (afn {a :a} {:on-click (fn [_] (swap! a inc))})
                :schema {:a (ref s/Int)}
                :args {:a a0}}))
@@ -98,7 +98,7 @@ sfn stands for 'state function' in other words a value that depends on the compo
 it can be built with sfn or afn macros (note that first argument is a binding form, for sfn it binds on full state and for afn on args)  
 
 ```clojure
-(mount (scomp {:body (afn {a :a} [[:div @a]])
+(mount (scomp {:body (afn {a :a} [[:div (rum/react a)]])
                :attrs (afn {a :a} {:on-click (fn [_] (swap! a inc))})
                :schema {:a (ref s/Int)}
                :args {:a a0}}))                
@@ -107,7 +107,7 @@ it can be built with sfn or afn macros (note that first argument is a binding fo
 the `afn` macro provide a cleaner way to declare constructors that cares only about args
 
 ```clojure
-(mount (scomp {:body (afn {a :a} [[:div @a]])
+(mount (scomp {:body (afn {a :a} [[:div (rum/react a)]])
                :attrs [(afn {a :a} {:on-click (fn [_] (swap! a inc))})
                        {:on-mouse-over (fn [e] (println e))}]
                :schema {:a (ref s/Int)}
@@ -336,7 +336,7 @@ with m! you can swap an attribute value
                   (afn {a :a b :b}
                        {:margin (str a "px")
                         :padding (str @b "px")})]
-          :body (fn [_] ["Hello scomp!"])
+          :body (fn [_] (rum/react b) ["Hello scomp!"])
           :schema {:a s/Int :b (ref s/Int)}
           :args {:a 50 :b (cursor atom3 [:b])}}))
 
